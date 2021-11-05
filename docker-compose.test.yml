@@ -1,0 +1,73 @@
+version: '3.7'
+services:
+  # redis ------------------------------------------
+  redis:
+    image: redis:6.2.5-alpine
+    restart: always
+    ports:
+      - ${REDIS_PORT}:6379
+    networks:
+      internal:
+        aliases:
+          - com.nestjs.db_redis
+    container_name: db_redis
+  # postgres ------------------------------------------
+  postgres_node:
+    image: postgres:13-alpine
+    environment:
+      TZ: 'Asia/Ho_Chi_Minh'
+      PGTZ: 'Asia/Ho_Chi_Minh'
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE}
+    ports:
+      - ${DB_PORT}:5432
+    command: postgres -c 'config_file=/etc/postgresql/postgresql.conf'
+    volumes:
+      - ./docker/postgres.conf:/etc/postgresql/postgresql.conf
+      - ./docker/data/postgres-data:/var/lib/postgresql/data
+    networks:
+      internal:
+        aliases:
+          - com.nestjs.db_postgres
+    container_name: db_postgres
+  # Nest Workspace ------------------------------------------
+  nest_workspace:
+    build:
+      context: .
+      dockerfile: docker/test/node/Dockerfile
+    image: nest_workspace
+    container_name: nest_workspace
+    hostname: nest_workspace
+    restart: on-failure
+    links:
+      - redis
+      - postgres_node
+    ports:
+      - ${PORT}:${PORT}
+    env_file:
+      - .env.test
+    environment:
+      DB_HOST: "172.22.0.1"
+      REDIS_HOST: "172.22.0.1"
+    volumes:
+      - ./:/usr/src/app
+      - /usr/src/app/node_modules
+    working_dir: /usr/src/app
+    command: [sh, -c, "pm2-runtime start ecosystem.config.js --env=test"]
+    networks:
+      internal:
+        aliases:
+          - com.nestjs.nest_workspace
+    tty: true
+    stdin_open: true
+
+networks:
+  internal:
+    name: internal
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.22.0.1/16
+
